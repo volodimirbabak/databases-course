@@ -1,0 +1,98 @@
+#!/bin/bash
+# Лабораторна робота №8 — Redis CLI команди
+# Кроки 1-4 (виконувались через Docker redis-cli)
+
+# ============================================
+# КРОК 1 — Транзакції (MULTI / EXEC / WATCH)
+# ============================================
+
+# Проста транзакція
+MULTI
+SET user:1 "Володимир"
+SET user:2 "Олена"
+INCR visits
+EXEC
+# Результат:
+# 1) OK
+# 2) OK
+# 3) (integer) 1
+
+# WATCH для імітації конкурентного доступу
+SET balance 100
+# Відповідь: OK
+
+WATCH balance
+# Відповідь: OK
+
+MULTI
+DECR balance
+INCR purchases
+EXEC
+# Результат:
+# 1) (integer) 99
+# 2) (integer) 1
+
+# DISCARD — скасування транзакції
+MULTI
+SET test "abc"
+DISCARD
+# Відповідь: OK — транзакція скасована
+
+# ============================================
+# КРОК 2 — Lua-скрипти (EVAL)
+# ============================================
+
+# Перший виклик — ключ не існує → створює
+EVAL "if redis.call('exists', KEYS[1]) == 0 then return redis.call('set', KEYS[1], ARGV[1]) else return 'exists' end" 1 testkey "hello"
+# Відповідь: OK
+
+# Другий виклик — ключ вже існує → повертає 'exists'
+EVAL "if redis.call('exists', KEYS[1]) == 0 then return redis.call('set', KEYS[1], ARGV[1]) else return 'exists' end" 1 testkey "hello"
+# Відповідь: "exists"
+
+# ============================================
+# КРОК 3 — Pub/Sub (два термінали)
+# ============================================
+
+# --- Термінал 1 (підписник) ---
+SUBSCRIBE news
+# Відповідь:
+# 1) "subscribe"
+# 2) "news"
+# 3) (integer) 1
+# Після публікації отримує:
+# 1) "message"
+# 2) "news"
+# 3) "Redis is awesome!"
+# 1) "message"
+# 2) "news"
+# 3) "Hello from Volodymyr!"
+
+# --- Термінал 2 (публікатор) ---
+PUBLISH news "Redis is awesome!"
+# Відповідь: (integer) 5
+
+PUBLISH news "Hello from Volodymyr!"
+# Відповідь: (integer) 5
+
+# ============================================
+# КРОК 4 — Redis Streams (XADD / XRANGE / XREAD)
+# ============================================
+
+# Додавання подій до потоку
+XADD mystream * sensor-id 1234 temperature 19.8
+# Відповідь: "1781176328786-0"
+
+XADD mystream * sensor-id 1234 temperature 22.1
+# Відповідь: "1781176328790-0"
+
+XADD mystream * sensor-id 5678 temperature 18.5
+# Відповідь: "1781176328796-0"
+
+# Читання всіх подій
+XRANGE mystream - +
+# Повертає всі події з ID та полями sensor-id і temperature
+
+# Читання перших 2 подій
+XREAD COUNT 2 STREAMS mystream 0
+# Повертає перші 2 події починаючи від ID 0
